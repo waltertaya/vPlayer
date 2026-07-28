@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    printf("Successfully opened %s!\n", argv[1]);
+    // printf("Successfully opened %s!\n", argv[1]);
 
 
     // retrieve detailed stream information
@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
 
     // printf("Video stream index: %d\n", video_stream_index);
     // Find the registered decoder for out specific video stream
-    AVCodec *codec = avcodec_find_decoder(format_context->streams[video_stream_index]->codecpar->codec_id);
+    const AVCodec *codec = avcodec_find_decoder(format_context->streams[video_stream_index]->codecpar->codec_id);
 
     if (!codec) {
         printf("Error: Unsupported codec\n");
@@ -68,6 +68,54 @@ int main(int argc, char *argv[]) {
         printf("Error: Could not open codec\n");
         return -1;
     }
+
+    // allocate an empty packet wrapper on the stack
+    AVPacket *packet = av_packet_alloc();
+    if (!packet) {
+        printf("Error: Failed to allocate packet\n");
+        return -1;
+    }
+
+    // allocate a reusable raw frame to hold the decoded pixels
+    AVFrame *frame = av_frame_alloc();
+    if (!frame) {
+        printf("Could not allocate video frame\n");
+        return -1;
+    }
+
+    // read packets in a continuous loop from the container
+    while (av_read_frame(format_context, packet) >= 0) {
+        // check if this packet belongs to our selected video stream
+        if (packet->stream_index == video_stream_index) {
+            // send compressed packet to the decoder
+            int response = avcodec_send_packet(codec_context, packet);
+            if (response < 0) {
+                printf("Error while sending a packet to the decoder\n");
+                return response;
+            }
+            // printf("Read video packet with size: %d bytes\n", packet->size);
+            while (response >= 0) {
+                // retrieve uncompressed frames from the decoder
+                response = avcodec_receive_frame(codec_context, frame);
+                if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
+                    // EAGAIN => we need to feed the decoder more packets first
+                    break;
+                } else if (response < 0) {
+                    printf("Error: receiving a frame from the decoder\n");
+                    return response;
+                }
+
+                // decoded a frame successfully
+                printf("Decoded Frame %ld (Width: %d, Height: %d)\n", codec_context->frame_num, frame->width, frame->height);
+            }
+        }
+
+        // wipe the packet's internal buffers to prepare for the next read
+        av_packet_unref(packet);
+    }
+
+    // clean up packet wrapper when playback ends
+    av_packet_free(&packet);
 
     // clean up by closing the input context
     avformat_close_input(&format_context);
