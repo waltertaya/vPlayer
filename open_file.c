@@ -3,6 +3,22 @@
 #include <libavcodec/avcodec.h>
 #include <stdio.h>
 
+static int handle_sdl_events(void) {
+    SDL_Event event;
+
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_QUIT) {
+            return 0;
+        }
+
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         printf("Usage: %s <input_file>\n", argv[0]);
@@ -104,7 +120,14 @@ int main(int argc, char *argv[]) {
     }
 
     // read packets in a continuous loop from the container
-    while (av_read_frame(format_context, packet) >= 0) {
+    int is_running = 1;
+    while (is_running && av_read_frame(format_context, packet) >= 0) {
+        is_running = handle_sdl_events();
+        if (!is_running) {
+            av_packet_unref(packet);
+            break;
+        }
+
         if (packet->stream_index == video_stream_index) {
             int response = avcodec_send_packet(codec_context, packet);
             if (response < 0) {
@@ -112,7 +135,12 @@ int main(int argc, char *argv[]) {
                 break;
             }
 
-            while (response >= 0) {
+            while (is_running && response >= 0) {
+                is_running = handle_sdl_events();
+                if (!is_running) {
+                    break;
+                }
+
                 response = avcodec_receive_frame(codec_context, frame);
                 if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
                     break;
@@ -134,6 +162,11 @@ int main(int argc, char *argv[]) {
                 SDL_RenderClear(sdl_ctx.renderer);
                 SDL_RenderCopy(sdl_ctx.renderer, sdl_ctx.texture, NULL, NULL);
                 SDL_RenderPresent(sdl_ctx.renderer);
+
+                is_running = handle_sdl_events();
+                if (!is_running) {
+                    break;
+                }
 
                 // standard 40ms frame delay
                 SDL_Delay(40);
