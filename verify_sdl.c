@@ -1,51 +1,65 @@
-#include <SDL2/SDL.h>
-#include <stdio.h>
-#include <time.h>
+#include "vplayer.h"
 
-int main(int argc, char* argv[]) {
-    // initialize only the video subsystem of SDL2
+int init_sdl_context(SDL_PlayerContext *ctx, int width, int height) {
+    // initialize the SDL Video Subsystem
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        printf("SDL could not initialize! SDL_ERROR: %s\n", SDL_GetError());
-        return 1;
+        printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
+        return -1;
     }
 
-    // printf("SDL successfully initialized\n");
-    // create the desktop window wrapper
-    SDL_Window *window = SDL_CreateWindow(
+    // create desktop window
+    ctx->window = SDL_CreateWindow(
         "taya custom vPlayer",
         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-        800, 600, // default window width and height
+        width / 2, height / 2, // default window dimensions scaled comfortably
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
     );
-
-    if (!window) {
+    if (!ctx->window) {
         printf("Error: Window creation failed: %s\n", SDL_GetError());
         SDL_Quit();
-        return 1;
+        return -1;
     }
 
-    // create the h/w accelerated renderer inside window
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (!renderer) {
+    // create hardware accelerated renderer
+    ctx->renderer = SDL_CreateRenderer(ctx->window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!ctx->renderer) {
         printf("Renderer creation failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
+        SDL_DestroyWindow(ctx->window);
         SDL_Quit();
-        return 1;
+        return -1;
     }
 
-    clock_t start_time = clock();
-    clock_t end_time = start_time + (60 * CLOCKS_PER_SEC);
-
-    while (clock() < end_time) {
-        // delay for 1 minute
+    // allocate streaming YUV texture in VRAM
+    ctx->texture = SDL_CreateTexture(
+        ctx->renderer,
+        SDL_PIXELFORMAT_YV12,
+        SDL_TEXTUREACCESS_STREAMING,
+        width,
+        height
+    );
+    if (!ctx->texture) {
+        printf("Texture creation failed: %s\n", SDL_GetError());
+        SDL_DestroyRenderer(ctx->renderer);
+        SDL_DestroyWindow(ctx->window);
+        SDL_Quit();
+        return -1;
     }
 
-    printf("SDL Window and Renderer successfully created\n");
-
-
-    // clean up and shut down SDL
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
     return 0;
+}
+
+void destroy_sdl_context(SDL_PlayerContext *ctx) {
+    if (ctx->texture) {
+        SDL_DestroyTexture(ctx->texture);
+        ctx->texture = NULL;
+    }
+    if (ctx->renderer) {
+        SDL_DestroyRenderer(ctx->renderer);
+        ctx->renderer = NULL;
+    }
+    if (ctx->window) {
+        SDL_DestroyWindow(ctx->window);
+        ctx->window = NULL;
+    }
+    SDL_Quit();
 }
